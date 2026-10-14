@@ -3,7 +3,7 @@
 An [OpenCode](https://opencode.ai) V2 plugin that shows your GitHub Copilot usage, in AI credits and percentage, right in the TUI.
 
 ```
-Copilot 30,890/40,000 cr · 77.6%
+Copilot 2,000/15,000 cr · 13.3%
 ```
 
 ## Features
