@@ -93,11 +93,72 @@ npm install
 npm run typecheck
 ```
 
-To try a local checkout, point OpenCode at the directory:
+To test a local checkout, uninstall the npm package first. Both register the same plugin ID.
 
-```jsonc
+### OpenCode V2
+
+A config path such as `"plugins": ["D:/path/to/checkout"]` is not loaded, and OpenCode doesn't follow symlinks or junctions in the plugins folder. Instead, create a small loader folder in the global plugins directory:
+
+```text
+~/.config/opencode/plugins/copilot-usage-dev/
+├── package.json
+├── index.ts
+└── tui.ts
+```
+
+`package.json`:
+
+```json
 {
-  "plugins": ["D:/path/to/opencode-github-copilot-usage"],
+  "name": "copilot-usage-dev",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./tui": "./tui.ts"
+  }
+}
+```
+
+`index.ts`:
+
+```ts
+export { default } from "/absolute/path/to/opencode-github-copilot-usage/src/index.ts"
+```
+
+`tui.ts`:
+
+```ts
+export { default } from "/absolute/path/to/opencode-github-copilot-usage/src/tui.tsx"
+```
+
+On Windows, use a drive path such as `D:/development/opencode-github-copilot-usage/src/index.ts`.
+
+OpenCode doesn't watch the checkout. After editing, run `opencode service restart` and reopen the TUI. Restarting the service also stops running sessions.
+
+Check that the plugin loaded:
+
+```sh
+opencode api get /api/plugin
+opencode api post /api/rpc/copilot-usage/get --data '{"input":{"refresh":true}}'
+```
+
+In Git Bash on Windows, prefix these with `MSYS_NO_PATHCONV=1` so the API paths aren't rewritten.
+
+When you're done, delete the loader folder and reinstall the package:
+
+```sh
+rm -rf ~/.config/opencode/plugins/copilot-usage-dev
+opencode plugin add opencode-github-copilot-usage
+```
+
+### OpenCode V1
+
+Point `~/.config/opencode/tui.json` at the TUI file directly:
+
+```json
+{
+  "plugin": ["/absolute/path/to/opencode-github-copilot-usage/src/tui.tsx"]
 }
 ```
 
