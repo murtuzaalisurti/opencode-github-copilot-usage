@@ -28,7 +28,8 @@
     "src"
   ],
   "scripts": {
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "preversion": "npm run typecheck"
   },
   "dependencies": {
     "@opencode/plugin": "^2.0.28"
