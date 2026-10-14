@@ -1,0 +1,51 @@
+{
+  "name": "opencode-github-copilot-usage",
+  "version": "0.1.0",
+  "description": "OpenCode plugin that shows GitHub Copilot usage (AI credits and percentage) in the TUI",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "github-copilot",
+    "copilot",
+    "usage",
+    "credits"
+  ],
+  "license": "MIT",
+  "author": "Murtuzaali Surti",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/murtuzaalisurti/opencode-github-copilot-usage.git"
+  },
+  "bugs": "https://github.com/murtuzaalisurti/opencode-github-copilot-usage/issues",
+  "homepage": "https://github.com/murtuzaalisurti/opencode-github-copilot-usage#readme",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./rpc": "./src/rpc.ts",
+    "./tui": "./src/tui.tsx"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.0.28"
+  },
+  "peerDependencies": {
+    "@opentui/core": ">=0.5.17",
+    "@opentui/solid": ">=0.5.17",
+    "solid-js": ">=1.9.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.18.31",
+    "@opencode/theme": "2.0.28",
+    "@opentui/core": "*",
+    "@opentui/keymap": "^0.6.5",
+    "@opentui/solid": "*",
+    "@types/node": "*",
+    "solid-js": "*",
+    "typescript": "*"
+  }
+}
