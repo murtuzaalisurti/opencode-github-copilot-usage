@@ -20,15 +20,9 @@ export type Usage = {
 }
 
 export const PROVIDER_IDS = ["github-copilot", "github-copilot-enterprise"]
-export const DEFAULT_INTERVAL_SECONDS = 15
 export const TURN_REFRESH_DELAY_MS = 3_000
 
 const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
-
-export function intervalMs(value: unknown) {
-  const seconds = Number(value)
-  return (Number.isFinite(seconds) && seconds >= 5 ? seconds : DEFAULT_INTERVAL_SECONDS) * 1000
-}
 
 function apiBase(enterpriseUrl: unknown) {
   if (typeof enterpriseUrl !== "string" || !enterpriseUrl) return "https://api.github.com"

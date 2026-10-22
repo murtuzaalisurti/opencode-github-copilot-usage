@@ -4,32 +4,54 @@
 import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { createSignal } from "solid-js"
+import { createRenderEffect, createRoot, createSignal, onCleanup } from "solid-js"
+import type { JSX } from "@opentui/solid"
 import type { Definition as V2Definition } from "@opencode/plugin/tui/plugin"
 import type { TuiPlugin as V1TuiPlugin } from "@opencode-ai/plugin/tui"
 import { CopilotUsage } from "./rpc"
-import {
-  PROVIDER_IDS,
-  TURN_REFRESH_DELAY_MS,
-  details,
-  failure,
-  fetchUsage,
-  intervalMs,
-  label,
-  level,
-  type Usage,
-} from "./usage"
+import { resolve, showUsage, type Dialogs, type Overrides, type SettingsStore } from "./settings"
+import { PROVIDER_IDS, TURN_REFRESH_DELAY_MS, failure, fetchUsage, label, level, type Usage } from "./usage"
 
 const ID = "copilot-usage.tui"
 const COMMAND_ID = "copilot-usage.show"
 const COMMAND_TITLE = "Show GitHub Copilot usage"
+const SETTINGS_KEY = "copilot-usage.settings"
+
+/** Polls on the current interval, restarting the timer when it changes. Returns a disposer. */
+function poll(seconds: () => number, tick: () => void) {
+  return createRoot((dispose) => {
+    createRenderEffect(() => {
+      const timer = setInterval(tick, seconds() * 1000)
+      onCleanup(() => clearInterval(timer))
+    })
+    return dispose
+  })
+}
 
 const setup: V2Definition["setup"] = async (context) => {
   const rpc = context.client.rpc(CopilotUsage)
   const [state, setState] = context.storage.memory<{ usage?: Usage }>("usage", { initial: {} })
   // cli.json options win over opencode.json(c) options, which only the server receives
   const serverOptions = (await rpc.options({}).catch(() => ({}))) as Record<string, unknown>
-  const options = { ...serverOptions, ...context.options }
+  const config = { ...serverOptions, ...context.options }
+  // Durable and live-synced, so a change in one TUI applies to all of them
+  const [overrides, setOverrides] = context.storage.store<Overrides>("settings", { initial: {} })
+  const settings = () => resolve(config, overrides)
+  const store: SettingsStore = {
+    config: () => config,
+    overrides: () => ({ interval: overrides.interval, display: overrides.display }),
+    save: (next) =>
+      setOverrides((draft) => {
+        delete draft.interval
+        delete draft.display
+        Object.assign(draft, next)
+      }),
+  }
+  const dialogs: Dialogs = {
+    select: (title, options, current) => context.ui.dialog.select({ title, options, current }),
+    prompt: (title, description, value) => context.ui.dialog.prompt({ title, description, value }),
+    alert: (title, message) => context.ui.dialog.alert({ title, message }),
+  }
 
   const refresh = async (force = false) => {
     let usage: Usage
@@ -47,9 +69,12 @@ const setup: V2Definition["setup"] = async (context) => {
 
   void refresh()
   // Not forced: the server cache dedupes polls from multiple open TUIs
-  const timer = setInterval(() => {
-    if (active()) void refresh()
-  }, intervalMs(options.interval))
+  const stopPoll = poll(
+    () => settings().interval.value,
+    () => {
+      if (active()) void refresh()
+    },
+  )
 
   let pending: ReturnType<typeof setTimeout> | undefined
   const stopTurn = context.data.on("session.execution.succeeded", () => {
@@ -71,16 +96,16 @@ const setup: V2Definition["setup"] = async (context) => {
         title: COMMAND_TITLE,
         group: "Copilot",
         palette: true,
-        slash: { name: "copilot" },
+        slash: { name: "copilot-usage" },
         run: async () => {
           await refresh(true)
-          await context.ui.dialog.alert({ title: "GitHub Copilot usage", message: details(state.usage) })
+          await showUsage(dialogs, state.usage, store)
         },
       },
     ],
   }))
 
-  const text = () => (active() ? label(state.usage, options.display) : "")
+  const text = () => (active() ? label(state.usage, settings().display.value) : "")
   const color = () => {
     const current = level(state.usage)
     if (current === "normal") return context.theme.text.muted
@@ -97,7 +122,7 @@ const setup: V2Definition["setup"] = async (context) => {
   })
 
   return () => {
-    clearInterval(timer)
+    stopPoll()
     clearTimeout(pending)
     stopTurn()
     stopUpdates()
@@ -117,6 +142,40 @@ async function loadV1(): Promise<Usage> {
     throw new Error("GitHub Copilot not connected")
   } catch (error) {
     return failure(error)
+  }
+}
+
+/** V1 dialogs take callbacks; settle on choice or dismissal, whichever comes first. */
+function v1Dialogs(api: Parameters<V1TuiPlugin>[0]): Dialogs {
+  const { dialog, DialogAlert, DialogPrompt, DialogSelect } = api.ui
+  const open = <Value,>(render: (done: (value?: Value) => void) => JSX.Element) =>
+    new Promise<Value | undefined>((resolve) => {
+      let settled = false
+      const done = (value?: Value) => {
+        if (settled) return
+        settled = true
+        dialog.clear()
+        resolve(value)
+      }
+      dialog.replace(() => render(done), () => done())
+    })
+  return {
+    select: (title, options, current) =>
+      open((done) => (
+        <DialogSelect title={title} options={options} current={current} onSelect={(option) => done(option.value)} />
+      )),
+    prompt: (title, description, value) =>
+      open((done) => (
+        <DialogPrompt
+          title={title}
+          description={() => <text fg={api.theme.current.textMuted}>{description}</text>}
+          value={value}
+          onConfirm={(next) => done(next)}
+          onCancel={() => done()}
+        />
+      )),
+    alert: (title, message) =>
+      open<void>((done) => <DialogAlert title={title} message={message} onConfirm={() => done()} />).then(() => {}),
   }
 }
 
@@ -140,10 +199,26 @@ const tui: V1TuiPlugin = async (api, options) => {
     return PROVIDER_IDS.includes(last.role === "user" ? last.model.providerID : last.providerID)
   }
 
+  // kv may not notify Solid on writes from this plugin, so track them with a signal
+  const [saved, setSaved] = createSignal(0)
+  const config = { ...options }
+  const store: SettingsStore = {
+    config: () => config,
+    overrides: () => (saved(), api.kv.get<Overrides>(SETTINGS_KEY, {})),
+    save: (next) => {
+      api.kv.set(SETTINGS_KEY, next)
+      setSaved((count) => count + 1)
+    },
+  }
+  const settings = () => resolve(config, store.overrides())
+
   void refresh()
-  const timer = setInterval(() => {
-    if (active()) void refresh()
-  }, intervalMs(options?.interval))
+  const stopPoll = poll(
+    () => settings().interval.value,
+    () => {
+      if (active()) void refresh()
+    },
+  )
 
   let pending: ReturnType<typeof setTimeout> | undefined
   api.event.on("session.idle", () => {
@@ -153,7 +228,7 @@ const tui: V1TuiPlugin = async (api, options) => {
   })
 
   api.lifecycle.onDispose(() => {
-    clearInterval(timer)
+    stopPoll()
     clearTimeout(pending)
   })
 
@@ -165,22 +240,16 @@ const tui: V1TuiPlugin = async (api, options) => {
         title: COMMAND_TITLE,
         category: "Copilot",
         namespace: "palette",
-        slashName: "copilot",
+        slashName: "copilot-usage",
         async run() {
           await refresh()
-          api.ui.dialog.replace(() => (
-            <api.ui.DialogAlert
-              title="GitHub Copilot usage"
-              message={details(usage())}
-              onConfirm={() => api.ui.dialog.clear()}
-            />
-          ))
+          await showUsage(v1Dialogs(api), usage(), store)
         },
       },
     ],
   })
 
-  const text = () => (active() ? label(usage(), options?.display) : "")
+  const text = () => (active() ? label(usage(), settings().display.value) : "")
   const color = () => {
     const current = level(usage())
     if (current === "error") return api.theme.current.error

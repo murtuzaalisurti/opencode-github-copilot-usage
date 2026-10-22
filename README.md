@@ -11,7 +11,8 @@ Copilot 2,000/15,000 cr · 13.3%
 - Usage line below the prompt footer, shown only while a GitHub Copilot model is selected (on V1: when the session's latest message used Copilot).
 - Colour changes as you approach your limit: muted below 75%, warning from 75%, error from 90%.
 - Refreshes every 15 seconds and shortly after each completed turn.
-- `/copilot` slash command (also in the command palette) with full details: account, plan, billing type, used/remaining, overage, and reset date.
+- `/copilot-usage` slash command (also in the command palette) with full details: account, plan, billing type, used/remaining, overage, and reset date.
+- Settings in the TUI: pick **Settings...** in the `/copilot-usage` dialog to change the poll interval and footer format without editing config.
 - Uses the GitHub Copilot login already stored in OpenCode. No extra token needed. GitHub Enterprise logins are supported.
 
 ## Requirements
@@ -65,7 +66,7 @@ V2 (`opencode.jsonc`):
         // Poll interval in seconds (minimum 5, default 15)
         "interval": 15,
         // Footer format: "full" (default) shows "Copilot 2,000/15,000 cr · 13.3%",
-        // "percent" shows "Copilot 13.3%". /copilot always shows full details.
+        // "percent" shows "Copilot 13.3%". /copilot-usage always shows full details.
         "display": "full",
       },
     },
@@ -81,9 +82,21 @@ V1 (`tui.json`):
 }
 ```
 
+### Changing options in the TUI
+
+Run `/copilot-usage` and pick **Settings...**:
+
+- **Poll interval:** 15, 30, 60 or 120 seconds, or a custom value of 5 or more.
+- **Footer format:** full or percent.
+- **Reset to config:** removes values set here, so config values and defaults apply again.
+
+Changes take effect immediately. A value set in the TUI overrides config, and each setting shows where its current value comes from. TUI values are saved by OpenCode (plugin storage on V2, the TUI key-value store on V1) and survive restarts. On V2 they also sync across open TUIs. Config files are never modified.
+
+Precedence: TUI setting, then `cli.json` (V2), then `opencode.jsonc` (V2) or `tui.json` (V1), then the default.
+
 ## How it works
 
-- **V2:** the server plugin resolves the active `github-copilot` credential and calls `GET https://api.github.com/copilot_internal/user`, then exposes the parsed result through an RPC (`copilot-usage.get`). The TUI plugin polls that RPC and renders the footer line and the `/copilot` dialog.
+- **V2:** the server plugin resolves the active `github-copilot` credential and calls `GET https://api.github.com/copilot_internal/user`, then exposes the parsed result through an RPC (`copilot-usage.get`). The TUI plugin polls that RPC and renders the footer line and the `/copilot-usage` dialog.
 - **V1:** the `./tui` entry exports a V1 `tui` function next to the V2 `setup`. It reads the GitHub token from `auth.json` and calls the same endpoint itself.
 
 > [!NOTE]
