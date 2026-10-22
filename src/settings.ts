@@ -33,11 +33,17 @@ export function resolve(config: Record<string, unknown>, overrides: Overrides) {
   }
 }
 
-export type SelectOption<Value> = { title: string; value: Value; description?: string; disabled?: boolean }
+export type SelectOption<Value> = { title: string; value: Value; description?: string; footer?: string; category?: string }
+/** Footer button. Triggering it closes the dialog and resolves with its value. */
+export type SelectAction<Value> = { title: string; bind: string; value: Value }
 
 /** The dialogs this flow needs, implemented separately for V1 and V2. */
 export interface Dialogs {
-  select<Value>(title: string, options: SelectOption<Value>[], current?: Value): Promise<Value | undefined>
+  select<Value>(
+    title: string,
+    options: SelectOption<Value>[],
+    extra?: { current?: Value; actions?: SelectAction<Value>[] },
+  ): Promise<Value | undefined>
   prompt(title: string, description: string, value: string): Promise<string | undefined>
   alert(title: string, message: string): Promise<void>
 }
@@ -48,53 +54,63 @@ export type SettingsStore = {
   save: (next: Overrides) => void | Promise<void>
 }
 
-const SOURCE_LABEL: Record<Source, string> = { tui: "set here", config: "from config", default: "default" }
-const describe = (value: string, source: Source) => `${value} (${SOURCE_LABEL[source]})`
+const SOURCE_LABEL: Record<Source, string | undefined> = { tui: "set here", config: "from config", default: undefined }
 
-/** Usage details with a Settings entry at the end. */
+/** Usage details, with a footer button that opens settings. */
 export async function showUsage(dialogs: Dialogs, usage: Usage | undefined, settings: SettingsStore) {
-  const rows = details(usage)
-    .split("\n")
-    .map((line, index) => ({ title: line, value: `line:${index}` }))
-  const choice = await dialogs.select("GitHub Copilot usage", [
-    ...rows,
-    { title: "Settings...", value: "settings", description: "Poll interval and footer format" },
-  ])
+  const choice = await dialogs.select(
+    "GitHub Copilot usage",
+    details(usage).map((row, index) => ({
+      title: row.label,
+      footer: row.value,
+      category: row.category,
+      value: `row:${index}`,
+    })),
+    { actions: [{ title: "settings", bind: "ctrl+s", value: "settings" }] },
+  )
   if (choice === "settings") await editSettings(dialogs, settings)
 }
 
 async function editSettings(dialogs: Dialogs, settings: SettingsStore) {
+  let last: "interval" | "display" | "reset" | undefined
   while (true) {
     const overrides = settings.overrides()
     const current = resolve(settings.config(), overrides)
-    const choice = await dialogs.select("Copilot usage settings", [
+    const overridden = overrides.interval !== undefined || overrides.display !== undefined
+    const choice = await dialogs.select(
+      "Copilot usage settings",
+      [
+        {
+          title: "Format",
+          value: "display" as const,
+          category: "Footer",
+          description: SOURCE_LABEL[current.display.source],
+          footer: current.display.value,
+        },
+        {
+          title: "Interval",
+          value: "interval" as const,
+          category: "Refresh",
+          description: SOURCE_LABEL[current.interval.source],
+          footer: `${current.interval.value}s`,
+        },
+      ],
       {
-        title: "Poll interval",
-        value: "interval" as const,
-        description: describe(`${current.interval.value}s`, current.interval.source),
+        current: last === "reset" ? undefined : last,
+        actions: overridden ? [{ title: "reset to config", bind: "ctrl+r", value: "reset" as const }] : [],
       },
-      {
-        title: "Footer format",
-        value: "display" as const,
-        description: describe(current.display.value, current.display.source),
-      },
-      {
-        title: "Reset to config",
-        value: "reset" as const,
-        description: "Drop values set here",
-        disabled: overrides.interval === undefined && overrides.display === undefined,
-      },
-    ])
+    )
     if (choice === undefined) return
+    last = choice
     if (choice === "reset") await settings.save({})
     if (choice === "display") {
       const display = await dialogs.select(
         "Footer format",
         [
-          { title: "Full", value: "full" as Display, description: "Copilot 2,000/15,000 cr · 13.3%" },
-          { title: "Percent", value: "percent" as Display, description: "Copilot 13.3%" },
+          { title: "Full", value: "full" as Display, footer: "Copilot 2,000/15,000 cr · 13.3%" },
+          { title: "Percent", value: "percent" as Display, footer: "Copilot 13.3%" },
         ],
-        current.display.value,
+        { current: current.display.value },
       )
       if (display) await settings.save({ ...overrides, display })
     }
@@ -111,9 +127,9 @@ async function pickInterval(dialogs: Dialogs, current: number) {
     "Poll interval",
     [
       ...INTERVAL_PRESETS.map((seconds) => ({ title: `${seconds} seconds`, value: seconds })),
-      { title: "Custom...", value: 0, description: custom ? `${current} seconds` : undefined },
+      { title: "Custom...", value: 0, footer: custom ? `${current} seconds` : undefined },
     ],
-    custom ? 0 : current,
+    { current: custom ? 0 : current },
   )
   if (choice !== 0) return choice
   let input = String(current)

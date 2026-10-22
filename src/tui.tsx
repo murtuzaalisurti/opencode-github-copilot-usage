@@ -9,7 +9,15 @@ import type { JSX } from "@opentui/solid"
 import type { Definition as V2Definition } from "@opencode/plugin/tui/plugin"
 import type { TuiPlugin as V1TuiPlugin } from "@opencode-ai/plugin/tui"
 import { CopilotUsage } from "./rpc"
-import { resolve, showUsage, type Dialogs, type Overrides, type SettingsStore } from "./settings"
+import {
+  resolve,
+  showUsage,
+  type Dialogs,
+  type Overrides,
+  type SelectAction,
+  type SelectOption,
+  type SettingsStore,
+} from "./settings"
 import { PROVIDER_IDS, TURN_REFRESH_DELAY_MS, failure, fetchUsage, label, level, type Usage } from "./usage"
 
 const ID = "copilot-usage.tui"
@@ -48,7 +56,30 @@ const setup: V2Definition["setup"] = async (context) => {
       }),
   }
   const dialogs: Dialogs = {
-    select: (title, options, current) => context.ui.dialog.select({ title, options, current }),
+    async select<Value>(
+      title: string,
+      options: SelectOption<Value>[],
+      extra?: { current?: Value; actions?: SelectAction<Value>[] },
+    ) {
+      // Actions don't close the dialog themselves; clearing it resolves the select with undefined
+      let triggered: { value: Value } | undefined
+      const chosen = await context.ui.dialog.select({
+        title,
+        options,
+        current: extra?.current,
+        actions: extra?.actions?.map((action) => ({
+          title: action.title,
+          bind: action.bind,
+          side: "right" as const,
+          selection: "none" as const,
+          onTrigger: () => {
+            triggered = { value: action.value }
+            context.ui.dialog.clear()
+          },
+        })),
+      })
+      return triggered ? triggered.value : chosen
+    },
     prompt: (title, description, value) => context.ui.dialog.prompt({ title, description, value }),
     alert: (title, message) => context.ui.dialog.alert({ title, message }),
   }
@@ -160,9 +191,18 @@ function v1Dialogs(api: Parameters<V1TuiPlugin>[0]): Dialogs {
       dialog.replace(() => render(done), () => done())
     })
   return {
-    select: (title, options, current) =>
+    // V1 selects have no footer actions, so list them as options
+    select: (title, options, extra) =>
       open((done) => (
-        <DialogSelect title={title} options={options} current={current} onSelect={(option) => done(option.value)} />
+        <DialogSelect
+          title={title}
+          options={[
+            ...options,
+            ...(extra?.actions ?? []).map(({ title, value }) => ({ title, value, category: "Actions" })),
+          ]}
+          current={extra?.current}
+          onSelect={(option) => done(option.value)}
+        />
       )),
     prompt: (title, description, value) =>
       open((done) => (

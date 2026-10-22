@@ -104,23 +104,26 @@ export function level(usage: Usage | undefined): "normal" | "warning" | "error" 
   return "normal"
 }
 
-export function details(usage: Usage | undefined) {
-  if (!usage) return "Loading..."
-  if (usage.error) return usage.error
+export type DetailRow = { category: string; label: string; value: string }
+
+export function details(usage: Usage | undefined): DetailRow[] {
+  if (!usage) return [{ category: "Status", label: "Loading...", value: "" }]
+  if (usage.error) return [{ category: "Status", label: usage.error, value: "" }]
   const premium = usage.premium
-  const lines = [
-    `Account:   ${usage.login ?? "unknown"} (${usage.plan ?? "unknown plan"})`,
-    `Billing:   ${usage.tokenBasedBilling ? "AI credits" : "premium requests"}`,
+  const rows: DetailRow[] = [
+    { category: "Account", label: "Login", value: usage.login ?? "unknown" },
+    { category: "Account", label: "Plan", value: usage.plan ?? "unknown" },
+    { category: "Account", label: "Billing", value: usage.tokenBasedBilling ? "AI credits" : "premium requests" },
   ]
-  if (!premium) lines.push("Usage:     no premium quota reported")
-  else if (premium.unlimited) lines.push("Usage:     unlimited")
-  else
-    lines.push(
-      `Used:      ${fmt(premium.used)} / ${fmt(premium.entitlement)} (${pct(premium.percentUsed)})`,
-      `Remaining: ${fmt(premium.remaining)} (${pct(premium.percentRemaining)})`,
-      `Overage:   ${fmt(premium.overage)}${premium.overagePermitted ? " (permitted)" : " (not permitted)"}`,
-    )
-  if (usage.resetDate) lines.push(`Resets:    ${new Date(usage.resetDate).toLocaleDateString()}`)
-  lines.push(`Updated:   ${new Date(usage.fetchedAt).toLocaleTimeString()}`)
-  return lines.join("\n")
+  const quota = (label: string, value: string) => rows.push({ category: "Quota", label, value })
+  if (!premium) quota("Usage", "no premium quota reported")
+  else if (premium.unlimited) quota("Usage", "unlimited")
+  else {
+    quota("Used", `${fmt(premium.used)} / ${fmt(premium.entitlement)} (${pct(premium.percentUsed)})`)
+    quota("Remaining", `${fmt(premium.remaining)} (${pct(premium.percentRemaining)})`)
+    quota("Overage", `${fmt(premium.overage)}${premium.overagePermitted ? " (permitted)" : " (not permitted)"}`)
+  }
+  if (usage.resetDate) quota("Resets", new Date(usage.resetDate).toLocaleDateString())
+  quota("Updated", new Date(usage.fetchedAt).toLocaleTimeString())
+  return rows
 }
