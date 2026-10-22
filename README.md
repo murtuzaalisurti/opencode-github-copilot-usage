@@ -64,6 +64,9 @@ V2 (`opencode.jsonc`):
       "options": {
         // Poll interval in seconds (minimum 5, default 15)
         "interval": 15,
+        // Footer format: "full" (default) shows "Copilot 2,000/15,000 cr · 13.3%",
+        // "percent" shows "Copilot 13.3%". /copilot always shows full details.
+        "display": "full",
       },
     },
   ],
@@ -74,7 +77,7 @@ V1 (`tui.json`):
 
 ```json
 {
-  "plugin": [["opencode-github-copilot-usage", { "interval": 15 }]]
+  "plugin": [["opencode-github-copilot-usage", { "interval": 15, "display": "percent" }]]
 }
 ```
 

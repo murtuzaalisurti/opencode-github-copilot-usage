@@ -94,10 +94,11 @@ export async function fetchUsage(token: string, enterpriseUrl?: unknown): Promis
 const fmt = (value: number) => Math.round(value).toLocaleString("en-US")
 const pct = (value: number) => `${value.toFixed(1)}%`
 
-export function label(usage: Usage | undefined) {
+export function label(usage: Usage | undefined, display: unknown = "full") {
   const premium = usage?.premium
   if (!usage || usage.error || !premium) return ""
   if (premium.unlimited) return "Copilot: unlimited"
+  if (display === "percent") return `Copilot ${pct(premium.percentUsed)}`
   const unit = usage.tokenBasedBilling ? " cr" : " req"
   return `Copilot ${fmt(premium.used)}/${fmt(premium.entitlement)}${unit} · ${pct(premium.percentUsed)}`
 }

@@ -77,7 +77,7 @@ const setup: V2Definition["setup"] = (context) => {
     ],
   }))
 
-  const text = () => (active() ? label(state.usage) : "")
+  const text = () => (active() ? label(state.usage, context.options.display) : "")
   const color = () => {
     const current = level(state.usage)
     if (current === "normal") return context.theme.text.muted
@@ -177,7 +177,7 @@ const tui: V1TuiPlugin = async (api, options) => {
     ],
   })
 
-  const text = () => (active() ? label(usage()) : "")
+  const text = () => (active() ? label(usage(), options?.display) : "")
   const color = () => {
     const current = level(usage())
     if (current === "error") return api.theme.current.error
