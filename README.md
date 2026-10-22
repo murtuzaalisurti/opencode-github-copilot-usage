@@ -84,11 +84,13 @@ V1 (`tui.json`):
 
 ### Changing options in the TUI
 
-Run `/copilot-usage` and press `ctrl+s` (on V1, pick **settings** at the end of the list):
+Run `/copilot-usage` and press `ctrl+s` (on V1, pick **settings** at the end of the list). Change the selected setting with `←`/`→`:
 
-- **Footer → Format:** full or percent.
-- **Refresh → Interval:** 15, 30, 60 or 120 seconds, or a custom value of 5 or more.
+- **Footer → Format:** full or percent. `enter` also toggles it.
+- **Refresh → Interval:** 15, 30, 60 or 120 seconds. Press `enter` for a custom value of 5 or more.
 - **`ctrl+r` reset to config:** shown once something is set here; removes those values so config values and defaults apply again.
+
+On V1, arrow keys aren't available in plugin dialogs: `enter` toggles the format and opens the custom interval prompt.
 
 Changes take effect immediately. A value set in the TUI overrides config, and each setting shows where its current value comes from. TUI values are saved by OpenCode (plugin storage on V2, the TUI key-value store on V1) and survive restarts. On V2 they also sync across open TUIs. Config files are never modified.
 

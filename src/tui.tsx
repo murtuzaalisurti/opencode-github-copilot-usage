@@ -5,9 +5,10 @@ import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { createRenderEffect, createRoot, createSignal, onCleanup } from "solid-js"
+import type { KeyEvent } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
 import type { Definition as V2Definition } from "@opencode/plugin/tui/plugin"
-import type { TuiPlugin as V1TuiPlugin } from "@opencode-ai/plugin/tui"
+import type { TuiDialogSelectOption, TuiPlugin as V1TuiPlugin } from "@opencode-ai/plugin/tui"
 import { CopilotUsage } from "./rpc"
 import {
   resolve,
@@ -58,26 +59,43 @@ const setup: V2Definition["setup"] = async (context) => {
   const dialogs: Dialogs = {
     async select<Value>(
       title: string,
-      options: SelectOption<Value>[],
-      extra?: { current?: Value; actions?: SelectAction<Value>[] },
+      options: () => SelectOption<Value>[],
+      extra?: { current?: Value; actions?: () => SelectAction<Value>[] },
     ) {
-      // Actions don't close the dialog themselves; clearing it resolves the select with undefined
+      // Closing actions clear the dialog, which resolves the select with undefined
       let triggered: { value: Value } | undefined
+      // Actions don't receive the key, so note it before the keymap handles it
+      let pressed: string | undefined
+      const onKey = (event: KeyEvent) => {
+        pressed = event.name
+      }
+      context.renderer.keyInput.prependListener("keypress", onKey)
       const chosen = await context.ui.dialog.select({
         title,
-        options,
+        // Getters so the host re-reads them when settings change
+        get options() {
+          return options()
+        },
         current: extra?.current,
-        actions: extra?.actions?.map((action) => ({
-          title: action.title,
-          bind: action.bind,
-          side: "right" as const,
-          selection: "none" as const,
-          onTrigger: () => {
-            triggered = { value: action.value }
-            context.ui.dialog.clear()
-          },
-        })),
-      })
+        get actions() {
+          return extra?.actions?.().map((action) =>
+            "run" in action
+              ? action.selection === "none"
+                ? { ...action, side: "right" as const, onTrigger: () => void action.run() }
+                : { ...action, side: "right" as const, onTrigger: (selected: Value) => void action.run(selected, pressed) }
+              : {
+                  title: action.title,
+                  bind: action.bind,
+                  side: "right" as const,
+                  selection: "none" as const,
+                  onTrigger: () => {
+                    triggered = { value: action.value }
+                    context.ui.dialog.clear()
+                  },
+                },
+          )
+        },
+      }).finally(() => context.renderer.keyInput.off("keypress", onKey))
       return triggered ? triggered.value : chosen
     },
     prompt: (title, description, value) => context.ui.dialog.prompt({ title, description, value }),
@@ -191,19 +209,31 @@ function v1Dialogs(api: Parameters<V1TuiPlugin>[0]): Dialogs {
       dialog.replace(() => render(done), () => done())
     })
   return {
-    // V1 selects have no footer actions, so list them as options
-    select: (title, options, extra) =>
-      open((done) => (
+    // V1 selects have no footer actions, so list the ones that don't act on the selected option
+    select<Value>(
+      title: string,
+      options: () => SelectOption<Value>[],
+      extra?: { current?: Value; actions?: () => SelectAction<Value>[] },
+    ) {
+      const rows = (): TuiDialogSelectOption<Value | undefined>[] => [
+        ...options(),
+        ...(extra?.actions?.() ?? []).flatMap((action): TuiDialogSelectOption<Value | undefined>[] => {
+          if ("value" in action) return [{ title: action.title, value: action.value, category: "Actions" }]
+          if (action.selection !== "none") return []
+          return [{ title: action.title, value: undefined, category: "Actions", onSelect: () => void action.run() }]
+        }),
+      ]
+      return open<Value>((done) => (
         <DialogSelect
           title={title}
-          options={[
-            ...options,
-            ...(extra?.actions ?? []).map(({ title, value }) => ({ title, value, category: "Actions" })),
-          ]}
+          options={rows()}
           current={extra?.current}
-          onSelect={(option) => done(option.value)}
+          onSelect={(option) => {
+            if (!option.onSelect) done(option.value)
+          }}
         />
-      )),
+      ))
+    },
     prompt: (title, description, value) =>
       open((done) => (
         <DialogPrompt
