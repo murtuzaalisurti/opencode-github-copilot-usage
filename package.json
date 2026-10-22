@@ -1,6 +1,6 @@
 {
   "name": "opencode-github-copilot-usage",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "OpenCode plugin that shows GitHub Copilot usage (AI credits and percentage) in the TUI",
   "keywords": [
     "opencode",
