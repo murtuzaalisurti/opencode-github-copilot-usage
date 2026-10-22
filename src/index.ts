@@ -36,6 +36,8 @@ export default Plugin.define({
         await registration.events.emit("updated", cache)
         return cache
       },
+      // The CLI loads the TUI entry without opencode.json(c) options, so hand them over here
+      options: async () => ({ ...ctx.options }),
     })
   },
 })

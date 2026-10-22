@@ -13,6 +13,10 @@ export const CopilotUsage = {
       },
       output: { type: "object" },
     },
+    options: {
+      input: { type: "object" },
+      output: { type: "object" },
+    },
   },
   events: {
     updated: { schema: { type: "object" } },

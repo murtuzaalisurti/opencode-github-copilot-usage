@@ -24,9 +24,12 @@ const ID = "copilot-usage.tui"
 const COMMAND_ID = "copilot-usage.show"
 const COMMAND_TITLE = "Show GitHub Copilot usage"
 
-const setup: V2Definition["setup"] = (context) => {
+const setup: V2Definition["setup"] = async (context) => {
   const rpc = context.client.rpc(CopilotUsage)
   const [state, setState] = context.storage.memory<{ usage?: Usage }>("usage", { initial: {} })
+  // cli.json options win over opencode.json(c) options, which only the server receives
+  const serverOptions = (await rpc.options({}).catch(() => ({}))) as Record<string, unknown>
+  const options = { ...serverOptions, ...context.options }
 
   const refresh = async (force = false) => {
     let usage: Usage
@@ -46,7 +49,7 @@ const setup: V2Definition["setup"] = (context) => {
   // Not forced: the server cache dedupes polls from multiple open TUIs
   const timer = setInterval(() => {
     if (active()) void refresh()
-  }, intervalMs(context.options.interval))
+  }, intervalMs(options.interval))
 
   let pending: ReturnType<typeof setTimeout> | undefined
   const stopTurn = context.data.on("session.execution.succeeded", () => {
@@ -77,7 +80,7 @@ const setup: V2Definition["setup"] = (context) => {
     ],
   }))
 
-  const text = () => (active() ? label(state.usage, context.options.display) : "")
+  const text = () => (active() ? label(state.usage, options.display) : "")
   const color = () => {
     const current = level(state.usage)
     if (current === "normal") return context.theme.text.muted
