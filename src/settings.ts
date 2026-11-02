@@ -7,7 +7,7 @@ const DISPLAYS = ["full", "percent"] as const
 
 export type Display = (typeof DISPLAYS)[number]
 /** Values chosen in the TUI. Missing keys fall back to config, then defaults. */
-export type Overrides = { interval?: number; display?: Display }
+export type Overrides = { interval?: number; display?: Display; forecast?: boolean }
 type Source = "tui" | "config" | "default"
 type Setting<Value> = { value: Value; source: Source }
 
@@ -16,6 +16,7 @@ const validInterval = (value: unknown) => {
   return Number.isFinite(seconds) && seconds >= MIN_INTERVAL_SECONDS ? seconds : undefined
 }
 const validDisplay = (value: unknown) => DISPLAYS.find((display) => display === value)
+const validBoolean = (value: unknown) => (typeof value === "boolean" ? value : undefined)
 
 function pick<Value>(override: unknown, config: unknown, fallback: Value, valid: (value: unknown) => Value | undefined) {
   const fromTui = valid(override)
@@ -30,6 +31,7 @@ export function resolve(config: Record<string, unknown>, overrides: Overrides) {
   return {
     interval: pick(overrides.interval, config.interval, DEFAULT_INTERVAL_SECONDS, validInterval),
     display: pick(overrides.display, config.display, "full" as Display, validDisplay),
+    forecast: pick(overrides.forecast, config.forecast, false, validBoolean),
   }
 }
 
@@ -65,7 +67,7 @@ const SOURCE_LABEL: Record<Source, string | undefined> = { tui: "set here", conf
 
 /** Usage details, with a footer button that opens settings. */
 export async function showUsage(dialogs: Dialogs, usage: Usage | undefined, settings: SettingsStore) {
-  const rows = details(usage, settings.config().forecast).map((row, index) => ({
+  const rows = details(usage, resolve(settings.config(), settings.overrides()).forecast.value).map((row, index) => ({
     title: row.label,
     footer: row.value,
     category: row.category,
@@ -77,7 +79,7 @@ export async function showUsage(dialogs: Dialogs, usage: Usage | undefined, sett
   if (choice === "settings") await editSettings(dialogs, settings)
 }
 
-type Key = "display" | "interval"
+type Key = "display" | "forecast" | "interval"
 
 /** Steps a setting to its previous or next value. Custom intervals step to the nearest preset. */
 function cycle(settings: SettingsStore, key: Key, step: 1 | -1) {
@@ -87,6 +89,7 @@ function cycle(settings: SettingsStore, key: Key, step: 1 | -1) {
     const index = DISPLAYS.indexOf(current.display.value)
     return settings.save({ ...overrides, display: DISPLAYS[(index + step + DISPLAYS.length) % DISPLAYS.length] })
   }
+  if (key === "forecast") return settings.save({ ...overrides, forecast: !current.forecast.value })
   const seconds = current.interval.value
   const presets = step > 0 ? INTERVAL_PRESETS : [...INTERVAL_PRESETS].reverse()
   const next = presets.find((preset) => (step > 0 ? preset > seconds : preset < seconds)) ?? presets[0]
@@ -110,6 +113,13 @@ async function editSettings(dialogs: Dialogs, settings: SettingsStore) {
             footer: current.display.value,
           },
           {
+            title: "Forecast",
+            value: "forecast" as Key,
+            category: "Footer",
+            description: SOURCE_LABEL[current.forecast.source],
+            footer: current.forecast.value ? "on" : "off",
+          },
+          {
             title: "Interval",
             value: "interval" as Key,
             category: "Refresh",
@@ -129,7 +139,7 @@ async function editSettings(dialogs: Dialogs, settings: SettingsStore) {
               run: (selected, key) => cycle(settings, selected, key === "left" ? -1 : 1),
             },
           ]
-          if (overrides.interval !== undefined || overrides.display !== undefined)
+          if (Object.values(overrides).some((value) => value !== undefined))
             actions.push({ title: "reset to config", bind: "ctrl+r", selection: "none", run: () => settings.save({}) })
           return actions
         },
@@ -137,7 +147,7 @@ async function editSettings(dialogs: Dialogs, settings: SettingsStore) {
     )
     if (choice === undefined) return
     last = choice
-    if (choice === "display") await cycle(settings, "display", 1)
+    if (choice === "display" || choice === "forecast") await cycle(settings, choice, 1)
     if (choice === "interval") {
       const current = resolve(settings.config(), settings.overrides()).interval.value
       const interval = await customInterval(dialogs, current)

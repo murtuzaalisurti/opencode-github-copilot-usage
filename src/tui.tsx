@@ -57,11 +57,12 @@ const setup: V2Definition["setup"] = async (context) => {
   const settings = () => resolve(config, overrides)
   const store: SettingsStore = {
     config: () => config,
-    overrides: () => ({ interval: overrides.interval, display: overrides.display }),
+    overrides: () => ({ interval: overrides.interval, display: overrides.display, forecast: overrides.forecast }),
     save: (next) =>
       setOverrides((draft) => {
         delete draft.interval
         delete draft.display
+        delete draft.forecast
         Object.assign(draft, next)
       }),
   }
@@ -164,7 +165,7 @@ const setup: V2Definition["setup"] = async (context) => {
   }))
 
   const text = () => (active() ? label(state.usage, settings().display.value) : "")
-  const forecast = () => (active() ? forecastLabel(state.usage, config.forecast) : "")
+  const forecast = () => (active() ? forecastLabel(state.usage, settings().forecast.value) : "")
   const color = () => {
     const current = level(state.usage)
     if (current === "normal") return context.theme.text.muted
@@ -342,7 +343,7 @@ const tui: V1TuiPlugin = async (api, options) => {
   })
 
   const text = () => (active() ? label(usage(), settings().display.value) : "")
-  const forecast = () => (active() ? forecastLabel(usage(), config.forecast) : "")
+  const forecast = () => (active() ? forecastLabel(usage(), settings().forecast.value) : "")
   const color = () => {
     const current = level(usage())
     if (current === "error") return api.theme.current.error
