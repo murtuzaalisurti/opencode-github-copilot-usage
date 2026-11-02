@@ -87,6 +87,27 @@ export async function fetchUsage(token: string, enterpriseUrl?: unknown): Promis
 
 const fmt = (value: number) => Math.round(value).toLocaleString("en-US")
 const pct = (value: number) => `${value.toFixed(1)}%`
+const DAY_MS = 86_400_000
+
+/**
+ * Days until the quota runs out at the average daily rate since the cycle began.
+ * Infinity when it lasts past the reset date. Undefined when there is nothing to forecast.
+ */
+export function daysLeft(usage: Usage | undefined, now = Date.now()) {
+  const premium = usage?.premium
+  if (!usage?.resetDate || !premium || premium.unlimited || premium.used <= 0) return
+  const reset = new Date(usage.resetDate)
+  if (Number.isNaN(reset.getTime())) return
+  // shortcut: assumes monthly cycles ending at resetDate; the API exposes no cycle start
+  const start = new Date(reset)
+  start.setUTCMonth(start.getUTCMonth() - 1)
+  const elapsed = now - start.getTime()
+  if (elapsed <= 0) return
+  const days = premium.remaining / (premium.used / (elapsed / DAY_MS))
+  return now + days * DAY_MS >= reset.getTime() ? Infinity : days
+}
+
+const forecastText = (days: number) => (days === Infinity ? "lasts until reset" : `~${Math.floor(days)}d left`)
 
 export function label(usage: Usage | undefined, display: unknown = "full") {
   const premium = usage?.premium
@@ -95,6 +116,11 @@ export function label(usage: Usage | undefined, display: unknown = "full") {
   if (display === "percent") return `Copilot ${pct(premium.percentUsed)}`
   const unit = usage.tokenBasedBilling ? " cr" : " req"
   return `Copilot ${fmt(premium.used)}/${fmt(premium.entitlement)}${unit} · ${pct(premium.percentUsed)}`
+}
+
+export function forecastLabel(usage: Usage | undefined, forecast: unknown) {
+  const days = forecast === true && !usage?.error ? daysLeft(usage) : undefined
+  return days === undefined ? "" : forecastText(days)
 }
 
 export function level(usage: Usage | undefined): "normal" | "warning" | "error" {
@@ -106,7 +132,7 @@ export function level(usage: Usage | undefined): "normal" | "warning" | "error" 
 
 export type DetailRow = { category: string; label: string; value: string }
 
-export function details(usage: Usage | undefined): DetailRow[] {
+export function details(usage: Usage | undefined, forecast: unknown = false): DetailRow[] {
   if (!usage) return [{ category: "Status", label: "Loading...", value: "" }]
   if (usage.error) return [{ category: "Status", label: usage.error, value: "" }]
   const premium = usage.premium
@@ -123,6 +149,8 @@ export function details(usage: Usage | undefined): DetailRow[] {
     quota("Remaining", `${fmt(premium.remaining)} (${pct(premium.percentRemaining)})`)
     quota("Overage", `${fmt(premium.overage)}${premium.overagePermitted ? " (permitted)" : " (not permitted)"}`)
   }
+  const days = forecast === true ? daysLeft(usage) : undefined
+  if (days !== undefined) quota("Forecast", `${forecastText(days)} at current pace`)
   if (usage.resetDate) quota("Resets", new Date(usage.resetDate).toLocaleDateString())
   quota("Updated", new Date(usage.fetchedAt).toLocaleTimeString())
   return rows

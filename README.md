@@ -11,13 +11,14 @@ Copilot 2,000/15,000 cr · 13.3%
 - Usage line below the prompt footer, shown only while a GitHub Copilot model is selected (on V1: when the session's latest message used Copilot).
 - Colour changes as you approach your limit: muted below 75%, warning from 75%, error from 90%.
 - Refreshes every 15 seconds and shortly after each completed turn.
+- Optional forecast of how many days until the quota runs out at your current pace (`forecast` option).
 - `/copilot-usage` slash command (also in the command palette) with full details: account, plan, billing type, used/remaining, overage, and reset date.
 - Settings in the TUI: press `ctrl+s` in the `/copilot-usage` dialog to change the poll interval and footer format without editing config.
 - Uses the GitHub Copilot login already stored in OpenCode. No extra token needed. GitHub Enterprise logins are supported.
 
 ## Requirements
 
-- OpenCode V2 (tested with `2.0.28`), or OpenCode V1 `1.18.29` or newer.
+- OpenCode V2 (tested with `2.2.5`), or OpenCode V1 `1.18.29` or newer.
 - GitHub Copilot connected in OpenCode.
 
 ## Install
@@ -68,6 +69,11 @@ V2 (`opencode.jsonc`):
         // Footer format: "full" (default) shows "Copilot 2,000/15,000 cr · 13.3%",
         // "percent" shows "Copilot 13.3%". /copilot-usage always shows full details.
         "display": "full",
+        // Forecast when the quota runs out, based on your average daily usage since the
+        // billing cycle started, e.g. "· ~12d left" or "· lasts until reset". Moves to a
+        // second footer line when the window is too narrow.
+        // Also adds a Forecast line to /copilot-usage. Default false.
+        "forecast": false,
       },
     },
   ],
@@ -78,7 +84,7 @@ V1 (`tui.json`):
 
 ```json
 {
-  "plugin": [["opencode-github-copilot-usage", { "interval": 15, "display": "percent" }]]
+  "plugin": [["opencode-github-copilot-usage", { "interval": 15, "display": "percent", "forecast": true }]]
 }
 ```
 
@@ -111,46 +117,24 @@ npm install
 npm run typecheck
 ```
 
-To test a local checkout, uninstall the npm package first. Both register the same plugin ID.
+To test a local checkout, remove the npm package entry first. Both register the same plugin ID.
 
 ### OpenCode V2
 
-A config path such as `"plugins": ["D:/path/to/checkout"]` is not loaded, and OpenCode doesn't follow symlinks or junctions in the plugins folder. Instead, create a small loader folder in the global plugins directory:
+Point the plugin entry in `~/.config/opencode/opencode.jsonc` at the checkout (tested with `2.2.5`). Options work as usual:
 
-```text
-~/.config/opencode/plugins/copilot-usage-dev/
-├── package.json
-├── index.ts
-└── tui.ts
-```
-
-`package.json`:
-
-```json
+```jsonc
 {
-  "name": "copilot-usage-dev",
-  "private": true,
-  "type": "module",
-  "exports": {
-    ".": "./index.ts",
-    "./tui": "./tui.ts"
-  }
+  "plugins": [
+    {
+      "package": "/absolute/path/to/opencode-github-copilot-usage",
+      "options": { "forecast": true },
+    },
+  ],
 }
 ```
 
-`index.ts`:
-
-```ts
-export { default } from "/absolute/path/to/opencode-github-copilot-usage/src/index.ts"
-```
-
-`tui.ts`:
-
-```ts
-export { default } from "/absolute/path/to/opencode-github-copilot-usage/src/tui.tsx"
-```
-
-On Windows, use a drive path such as `D:/development/opencode-github-copilot-usage/src/index.ts`.
+On Windows, use a drive path such as `D:/development/opencode-github-copilot-usage`.
 
 OpenCode doesn't watch the checkout. After editing, run `opencode service restart` and reopen the TUI. Restarting the service also stops running sessions.
 
@@ -163,12 +147,7 @@ opencode api post /api/rpc/copilot-usage/get --data '{"input":{"refresh":true}}'
 
 In Git Bash on Windows, prefix these with `MSYS_NO_PATHCONV=1` so the API paths aren't rewritten.
 
-When you're done, delete the loader folder and reinstall the package:
-
-```sh
-rm -rf ~/.config/opencode/plugins/copilot-usage-dev
-opencode plugin add opencode-github-copilot-usage
-```
+When you're done, set `"package"` back to `"opencode-github-copilot-usage"`.
 
 ### OpenCode V1
 

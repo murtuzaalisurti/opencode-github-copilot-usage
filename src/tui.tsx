@@ -19,7 +19,16 @@ import {
   type SelectOption,
   type SettingsStore,
 } from "./settings"
-import { PROVIDER_IDS, TURN_REFRESH_DELAY_MS, failure, fetchUsage, label, level, type Usage } from "./usage"
+import {
+  PROVIDER_IDS,
+  TURN_REFRESH_DELAY_MS,
+  failure,
+  fetchUsage,
+  forecastLabel,
+  label,
+  level,
+  type Usage,
+} from "./usage"
 
 const ID = "copilot-usage.tui"
 const COMMAND_ID = "copilot-usage.show"
@@ -155,6 +164,7 @@ const setup: V2Definition["setup"] = async (context) => {
   }))
 
   const text = () => (active() ? label(state.usage, settings().display.value) : "")
+  const forecast = () => (active() ? forecastLabel(state.usage, config.forecast) : "")
   const color = () => {
     const current = level(state.usage)
     if (current === "normal") return context.theme.text.muted
@@ -164,8 +174,20 @@ const setup: V2Definition["setup"] = async (context) => {
   context.ui.slot({
     after: "prompt.footer",
     render: () => (
-      <box visible={text() !== ""} flexDirection="row" justifyContent="flex-end" flexShrink={0}>
-        <text fg={color()}>{text()}</text>
+      <box
+        visible={text() !== ""}
+        flexDirection="row"
+        flexWrap="wrap"
+        justifyContent="flex-end"
+        columnGap={1}
+        flexShrink={1}
+      >
+        <text fg={color()} flexShrink={0}>
+          {text()}
+        </text>
+        <text visible={forecast() !== ""} fg={context.theme.text.muted} flexShrink={0}>
+          {`· ${forecast()}`}
+        </text>
       </box>
     ),
   })
@@ -320,6 +342,7 @@ const tui: V1TuiPlugin = async (api, options) => {
   })
 
   const text = () => (active() ? label(usage(), settings().display.value) : "")
+  const forecast = () => (active() ? forecastLabel(usage(), config.forecast) : "")
   const color = () => {
     const current = level(usage())
     if (current === "error") return api.theme.current.error
@@ -330,8 +353,21 @@ const tui: V1TuiPlugin = async (api, options) => {
   api.slots.register({
     slots: {
       app_bottom: () => (
-        <box visible={text() !== ""} flexDirection="row" justifyContent="flex-end" flexShrink={0} paddingRight={2}>
-          <text fg={color()}>{text()}</text>
+        <box
+          visible={text() !== ""}
+          flexDirection="row"
+          flexWrap="wrap"
+          justifyContent="flex-end"
+          columnGap={1}
+          flexShrink={0}
+          paddingRight={2}
+        >
+          <text fg={color()} flexShrink={0}>
+            {text()}
+          </text>
+          <text visible={forecast() !== ""} fg={api.theme.current.textMuted} flexShrink={0}>
+            {`· ${forecast()}`}
+          </text>
         </box>
       ),
     },

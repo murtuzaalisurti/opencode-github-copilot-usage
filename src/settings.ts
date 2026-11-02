@@ -65,7 +65,7 @@ const SOURCE_LABEL: Record<Source, string | undefined> = { tui: "set here", conf
 
 /** Usage details, with a footer button that opens settings. */
 export async function showUsage(dialogs: Dialogs, usage: Usage | undefined, settings: SettingsStore) {
-  const rows = details(usage).map((row, index) => ({
+  const rows = details(usage, settings.config().forecast).map((row, index) => ({
     title: row.label,
     footer: row.value,
     category: row.category,
