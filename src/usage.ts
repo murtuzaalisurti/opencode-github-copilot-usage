@@ -13,6 +13,7 @@ export type Usage = {
   login?: string
   plan?: string
   tokenBasedBilling: boolean
+  quotaType?: "chat"
   resetDate?: string
   premium?: QuotaSnapshot
   fetchedAt: number
@@ -23,6 +24,14 @@ export const PROVIDER_IDS = ["github-copilot", "github-copilot-enterprise"]
 export const TURN_REFRESH_DELAY_MS = 3_000
 
 const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined)
+const clean = (value: number) => Number(value.toPrecision(12))
+
+const firstNum = (raw: Record<string, unknown>, ...keys: string[]) => {
+  for (const key of keys) {
+    const value = num(raw[key])
+    if (value !== undefined) return value
+  }
+}
 
 function apiBase(enterpriseUrl: unknown) {
   if (typeof enterpriseUrl !== "string" || !enterpriseUrl) return "https://api.github.com"
@@ -31,21 +40,34 @@ function apiBase(enterpriseUrl: unknown) {
 
 function parseSnapshot(raw: any): QuotaSnapshot | undefined {
   if (!raw || typeof raw !== "object") return
-  const entitlement = num(raw.entitlement) ?? 0
-  const remaining = num(raw.quota_remaining) ?? num(raw.remaining) ?? 0
+  const rawEntitlement = firstNum(raw, "entitlement", "entitlement_requests", "entitlementRequests")
+  const unlimited = raw.unlimited === true || rawEntitlement === -1
+  const entitlement = rawEntitlement !== undefined && rawEntitlement >= 0 ? rawEntitlement : 0
+  const reportedCreditsUsed = firstNum(raw, "credits_used")
+  const reportedUsedRequests = firstNum(raw, "used_requests", "usedRequests")
+  const reportedRemaining = firstNum(raw, "quota_remaining", "remaining", "remaining_requests", "remainingRequests")
+  const reportedPercent = firstNum(raw, "percent_remaining", "remaining_percentage", "remainingPercentage")
+  const remaining =
+    reportedRemaining ??
+    (reportedUsedRequests !== undefined ? Math.max(0, entitlement - reportedUsedRequests) :
+      reportedPercent !== undefined ? (entitlement * reportedPercent) / 100 : 0)
   const percentRemaining = Math.min(
     100,
-    Math.max(0, num(raw.percent_remaining) ?? (entitlement > 0 ? (remaining / entitlement) * 100 : 100)),
+    Math.max(0, reportedPercent ?? (entitlement > 0 ? (remaining / entitlement) * 100 : 100)),
   )
   return {
     entitlement,
     remaining,
     // credits_used is reported under token-based billing; older plans only expose remaining
-    used: num(raw.credits_used) ?? Math.max(0, entitlement - remaining),
+    used:
+      reportedCreditsUsed ??
+      (reportedRemaining !== undefined
+        ? clean(Math.max(0, entitlement - reportedRemaining))
+        : reportedUsedRequests ?? Math.max(0, entitlement - remaining)),
     percentRemaining,
     percentUsed: 100 - percentRemaining,
-    unlimited: raw.unlimited === true,
-    overage: num(raw.overage_count) ?? 0,
+    unlimited,
+    overage: firstNum(raw, "overage_count", "overageCount") ?? 0,
     overagePermitted: raw.overage_permitted === true,
   }
 }
@@ -72,12 +94,22 @@ export async function fetchUsage(token: string, enterpriseUrl?: unknown): Promis
     })
     if (!response.ok) throw new Error(`GitHub API returned ${response.status}`)
     const body = (await response.json()) as any
+    const premium = parseSnapshot(body.quota_snapshots?.premium_interactions)
+    const chat = parseSnapshot(body.quota_snapshots?.chat)
+    const hasPremiumQuota = premium?.unlimited || (premium?.entitlement ?? 0) > 0
+    const useChatQuota =
+      !hasPremiumQuota && chat !== undefined && (chat.unlimited || chat.entitlement > 0)
+    const selected = useChatQuota ? chat : premium
     return {
       login: body.login,
       plan: body.copilot_plan ?? body.access_type_sku,
       tokenBasedBilling: body.token_based_billing === true,
       resetDate: body.quota_reset_date_utc ?? body.quota_reset_date,
-      premium: parseSnapshot(body.quota_snapshots?.premium_interactions),
+      premium:
+        useChatQuota && chat && !chat.unlimited
+          ? { ...chat, used: clean(Math.max(0, chat.entitlement - chat.remaining)) }
+          : selected,
+      quotaType: useChatQuota ? "chat" : undefined,
       fetchedAt: Date.now(),
     }
   } catch (error) {
@@ -85,7 +117,7 @@ export async function fetchUsage(token: string, enterpriseUrl?: unknown): Promis
   }
 }
 
-const fmt = (value: number) => Math.round(value).toLocaleString("en-US")
+const fmt = (value: number) => value.toLocaleString("en-US", { maximumFractionDigits: 1 })
 const pct = (value: number) => `${value.toFixed(1)}%`
 const DAY_MS = 86_400_000
 
@@ -114,7 +146,7 @@ export function label(usage: Usage | undefined, display: unknown = "full") {
   if (!usage || usage.error || !premium) return ""
   if (premium.unlimited) return "Copilot: unlimited"
   if (display === "percent") return `Copilot ${pct(premium.percentUsed)}`
-  const unit = usage.tokenBasedBilling ? " cr" : " req"
+  const unit = usage.tokenBasedBilling && usage.quotaType !== "chat" ? " cr" : " req"
   return `Copilot ${fmt(premium.used)}/${fmt(premium.entitlement)}${unit} · ${pct(premium.percentUsed)}`
 }
 
@@ -139,7 +171,11 @@ export function details(usage: Usage | undefined, forecast: unknown = false): De
   const rows: DetailRow[] = [
     { category: "Account", label: "Login", value: usage.login ?? "unknown" },
     { category: "Account", label: "Plan", value: usage.plan ?? "unknown" },
-    { category: "Account", label: "Billing", value: usage.tokenBasedBilling ? "AI credits" : "premium requests" },
+    {
+      category: "Account",
+      label: "Billing",
+      value: usage.quotaType === "chat" ? "chat requests" : usage.tokenBasedBilling ? "AI credits" : "premium requests",
+    },
   ]
   const quota = (label: string, value: string) => rows.push({ category: "Quota", label, value })
   if (!premium) quota("Usage", "no premium quota reported")
