@@ -33,6 +33,8 @@ export default Plugin.define({
         if (!refresh && cache && !cache.error && Date.now() - cache.fetchedAt < CACHE_MS) return cache
         inflight ??= load().finally(() => (inflight = undefined))
         cache = await inflight
+        // RPC payloads must be plain JSON; undefined fields fail schema validation
+        cache = JSON.parse(JSON.stringify(cache)) as Usage
         await registration.events.emit("updated", cache)
         return cache
       },

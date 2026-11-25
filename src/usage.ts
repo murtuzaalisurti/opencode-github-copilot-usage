@@ -119,6 +119,7 @@ export async function fetchUsage(token: string, enterpriseUrl?: unknown): Promis
 
 const fmt = (value: number) => value.toLocaleString("en-US", { maximumFractionDigits: 1 })
 const pct = (value: number) => `${value.toFixed(1)}%`
+const usd = (credits: number) => `$${(credits / 100).toFixed(2)}`
 const DAY_MS = 86_400_000
 
 /**
@@ -184,6 +185,9 @@ export function details(usage: Usage | undefined, forecast: unknown = false): De
     quota("Used", `${fmt(premium.used)} / ${fmt(premium.entitlement)} (${pct(premium.percentUsed)})`)
     quota("Remaining", `${fmt(premium.remaining)} (${pct(premium.percentRemaining)})`)
     quota("Overage", `${fmt(premium.overage)}${premium.overagePermitted ? " (permitted)" : " (not permitted)"}`)
+    // 1 AI credit = $0.01 USD
+    if (usage.tokenBasedBilling && usage.quotaType !== "chat")
+      quota("Cost", `${usd(premium.used)} / ${usd(premium.entitlement)}`)
   }
   const days = forecast === true ? daysLeft(usage) : undefined
   if (days !== undefined) quota("Forecast", `${forecastText(days)} at current pace`)
